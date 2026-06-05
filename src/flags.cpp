@@ -3,7 +3,14 @@
 namespace CaDiCaL {
 
 void Internal::mark_fixed (int lit) {
-  Flags & f = flags (lit);
+  if (external->fixed_listener) {
+    int elit = externalize (lit);
+    assert (elit);
+    const int eidx = abs (elit);
+    if (!external->ervars[eidx])
+      external->fixed_listener->notify_fixed_assignment (elit);
+  }
+  Flags &f = flags (lit);
   assert (f.status == Flags::ACTIVE);
   f.status = Flags::FIXED;
   LOG ("fixed %d", abs (lit));
@@ -14,10 +21,18 @@ void Internal::mark_fixed (int lit) {
   stats.active--;
   assert (!active (lit));
   assert (f.fixed ());
+
+  if (external_prop && private_steps) {
+    // If pre/inprocessing found a fixed assignment, we want the propagator
+    // to know about it.
+    // But at that point it is not guaranteed to be already on the trail, so
+    // notification will happen only later.
+    assert (!level || in_mode (BACKBONE));
+  }
 }
 
 void Internal::mark_eliminated (int lit) {
-  Flags & f = flags (lit);
+  Flags &f = flags (lit);
   assert (f.status == Flags::ACTIVE);
   f.status = Flags::ELIMINATED;
   LOG ("eliminated %d", abs (lit));
@@ -31,7 +46,7 @@ void Internal::mark_eliminated (int lit) {
 }
 
 void Internal::mark_pure (int lit) {
-  Flags & f = flags (lit);
+  Flags &f = flags (lit);
   assert (f.status == Flags::ACTIVE);
   f.status = Flags::PURE;
   LOG ("pure %d", abs (lit));
@@ -45,7 +60,7 @@ void Internal::mark_pure (int lit) {
 }
 
 void Internal::mark_substituted (int lit) {
-  Flags & f = flags (lit);
+  Flags &f = flags (lit);
   assert (f.status == Flags::ACTIVE);
   f.status = Flags::SUBSTITUTED;
   LOG ("substituted %d", abs (lit));
@@ -59,7 +74,7 @@ void Internal::mark_substituted (int lit) {
 }
 
 void Internal::mark_active (int lit) {
-  Flags & f = flags (lit);
+  Flags &f = flags (lit);
   assert (f.status == Flags::UNUSED);
   f.status = Flags::ACTIVE;
   LOG ("activate %d previously unused", abs (lit));
@@ -73,42 +88,43 @@ void Internal::mark_active (int lit) {
 
 void Internal::reactivate (int lit) {
   assert (!active (lit));
-  Flags & f = flags (lit);
+  Flags &f = flags (lit);
   assert (f.status != Flags::FIXED);
   assert (f.status != Flags::UNUSED);
 #ifdef LOGGING
-  const char * msg = 0;
+  const char *msg = 0;
 #endif
   switch (f.status) {
-    default:
-    case Flags::ELIMINATED:
-      assert (f.status == Flags::ELIMINATED);
-      assert (stats.now.eliminated > 0);
-      stats.now.eliminated--;
+  default:
+  case Flags::ELIMINATED:
+    assert (f.status == Flags::ELIMINATED);
+    assert (stats.now.eliminated > 0);
+    stats.now.eliminated--;
 #ifdef LOGGING
-      msg = "eliminated";
+    msg = "eliminated";
 #endif
-      break;
-    case Flags::SUBSTITUTED:
+    break;
+  case Flags::SUBSTITUTED:
 #ifdef LOGGING
-      msg = "substituted";
+    msg = "substituted";
 #endif
-      assert (stats.now.substituted > 0);
-      stats.now.substituted--;
-      break;
-    case Flags::PURE:
+    assert (stats.now.substituted > 0);
+    stats.now.substituted--;
+    break;
+  case Flags::PURE:
 #ifdef LOGGING
-      msg = "pure literal";
+    msg = "pure literal";
 #endif
-      assert (stats.now.pure > 0);
-      stats.now.pure--;
-      break;
+    assert (stats.now.pure > 0);
+    stats.now.pure--;
+    break;
   }
 #ifdef LOGGING
   assert (msg);
   LOG ("reactivate previously %s %d", msg, abs (lit));
 #endif
   f.status = Flags::ACTIVE;
+  f.sweep = false;
   assert (active (lit));
   stats.reactivated++;
   assert (stats.inactive > 0);
@@ -116,4 +132,4 @@ void Internal::reactivate (int lit) {
   stats.active++;
 }
 
-}
+} // namespace CaDiCaL

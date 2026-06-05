@@ -5,6 +5,7 @@
 #ifdef LOGGING
 /*------------------------------------------------------------------------*/
 
+#include <cstdint>
 #include <vector>
 
 namespace CaDiCaL {
@@ -17,44 +18,55 @@ namespace CaDiCaL {
 using namespace std;
 
 struct Clause;
+struct Gate;
 struct Internal;
 
 struct Logger {
 
-static void print_log_prefix (Internal *);
+  static void print_log_prefix (Internal *);
 
-// Simple logging of a C-style format string.
-//
-static void log (Internal *, const char * fmt, ...)
-                 CADICAL_ATTRIBUTE_FORMAT (2, 3);
+  // Simple logging of a C-style format string.
+  //
+  static void log (Internal *, const char *fmt, ...)
+      CADICAL_ATTRIBUTE_FORMAT (2, 3);
 
-// Prints the format string (with its argument) and then the clause.  The
-// clause can also be a zero pointer and then is interpreted as a decision
-// (current decision level > 0) or unit clause (zero decision level) and
-// printed accordingly.
-//
-static void log (Internal *, const Clause *, const char *fmt, ...)
-                 CADICAL_ATTRIBUTE_FORMAT (3, 4);
+  // Prints the format string (with its argument) and then the clause.  The
+  // clause can also be a zero pointer and then is interpreted as a decision
+  // (current decision level > 0) or unit clause (zero decision level) and
+  // printed accordingly.
+  //
+  static void log (Internal *, const Clause *, const char *fmt, ...)
+      CADICAL_ATTRIBUTE_FORMAT (3, 4);
 
-// Same as before, except that this is meant for the global 'clause' stack
-// used for new clauses (and not for reasons).
-//
-static void log (Internal *, const vector<int> &, const char *fmt, ...)
-                 CADICAL_ATTRIBUTE_FORMAT (3, 4);
+  // Same as before, except that this is meant for the global 'clause' stack
+  // used for new clauses (and not for reasons).
+  //
+  static void log (Internal *, const vector<int> &, const char *fmt, ...)
+      CADICAL_ATTRIBUTE_FORMAT (3, 4);
 
-// Another variant, to avoid copying (without logging).
-//
-static void log (Internal *,
-                 const vector<int>::const_iterator & begin,
-                 const vector<int>::const_iterator & end,
-                 const char *fmt, ...)
-                 CADICAL_ATTRIBUTE_FORMAT (4, 5);
+  // Another variant, to avoid copying (without logging).
+  //
+  static void log (Internal *, const vector<int>::const_iterator &begin,
+                   const vector<int>::const_iterator &end, const char *fmt,
+                   ...) CADICAL_ATTRIBUTE_FORMAT (4, 5);
 
-static void log_empty_line (Internal *);
+  // used for logging LRAT proof chains
+  //
+  static void log (Internal *, const vector<int64_t> &, const char *fmt,
+                   ...) CADICAL_ATTRIBUTE_FORMAT (3, 4);
 
+  static void log (Internal *, const int *, const unsigned, const char *fmt,
+                   ...) CADICAL_ATTRIBUTE_FORMAT (4, 5);
+
+  static void log_empty_line (Internal *);
+
+  static void log (Internal *, const Gate *, const char *fmt, ...)
+      CADICAL_ATTRIBUTE_FORMAT (3, 4);
+
+  static string loglit (Internal *, int lit);
 };
 
-}
+} // namespace CaDiCaL
 
 /*------------------------------------------------------------------------*/
 
@@ -62,16 +74,23 @@ static void log_empty_line (Internal *);
 // '#ifdef') if logging code is not included.
 
 #define LOG(...) \
-do { \
-  if (!internal->opts.log) break; \
-  Logger::log (internal, __VA_ARGS__); \
-} while (0)
+  do { \
+    if (!internal->opts.log) \
+      break; \
+    Logger::log (internal, __VA_ARGS__); \
+  } while (0)
+
+#define LOGLIT(lit) Logger::loglit (internal, lit).c_str ()
 
 /*------------------------------------------------------------------------*/
-#else   // end of 'then' part of 'ifdef LOGGING'
+#else // end of 'then' part of 'ifdef LOGGING'
 /*------------------------------------------------------------------------*/
 
-#define LOG(...) do { } while (0)
+#define LOG(...) \
+  do { \
+  } while (0)
+
+#define LOGLIT(...)
 
 /*------------------------------------------------------------------------*/
 #endif // end of 'else' part of 'ifdef LOGGING'

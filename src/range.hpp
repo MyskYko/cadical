@@ -1,6 +1,8 @@
 #ifndef _range_hpp_INCLUDED
 #define _range_hpp_INCLUDED
 
+#include <cassert>
+
 namespace CaDiCaL {
 
 struct Clause;
@@ -46,21 +48,49 @@ struct Clause;
 
 class Range {
   static unsigned inc (unsigned u) { return u + 1u; }
+  static unsigned dec (unsigned u) { return u - 1u; }
   class iterator {
     int idx;
+
   public:
-    iterator (int i) : idx (i) { }
+    iterator (int i) : idx (i) {}
     void operator++ () { idx = inc (idx); }
-    const int & operator* () const { return idx; }
-    friend bool operator != (const iterator & a, const iterator & b) {
+    const int &operator* () const { return idx; }
+    friend bool operator!= (const iterator &a, const iterator &b) {
       return a.idx != b.idx;
     }
   };
-  int & n;
+
+  // Reverse iterator for iterating from max_var down to 1
+  class reverse_iterator {
+    int idx;
+
+  public:
+    reverse_iterator (int i) : idx (i) {}
+    void operator++ () { idx = dec (idx); }
+    const int &operator* () const { return idx; }
+    friend bool operator!= (const reverse_iterator &a,
+                            const reverse_iterator &b) {
+      return a.idx != b.idx;
+    }
+  };
+
+  int &n;
+
 public:
+  // forward iterator
   iterator begin () const { return assert (n >= 0), iterator (inc (0)); }
-  iterator end ()   const { return assert (n >= 0), iterator (inc (n)); }
-  Range (int & m) : n (m) { assert (m >= 0); }
+  iterator end () const { return assert (n >= 0), iterator (inc (n)); }
+
+  // Reverse iteration methods
+  reverse_iterator rbegin () const {
+    return assert (n >= 0), reverse_iterator (n);
+  }
+  reverse_iterator rend () const {
+    return assert (n >= 0), reverse_iterator (0);
+  }
+
+  Range (int &m) : n (m) { assert (m >= 0); }
 };
 
 // Same, but iterating over literals '-1,1,-2,2,....,-max_var,max_var'.
@@ -73,21 +103,23 @@ class Sange {
   static unsigned inc (unsigned u) { return ~u + (u >> 31); }
   class iterator {
     int lit;
+
   public:
-    iterator (int i) : lit (i) { }
+    iterator (int i) : lit (i) {}
     void operator++ () { lit = inc (lit); }
-    const int & operator* () const { return lit; }
-    friend bool operator != (const iterator & a, const iterator & b) {
+    const int &operator* () const { return lit; }
+    friend bool operator!= (const iterator &a, const iterator &b) {
       return a.lit != b.lit;
     }
   };
-  int & n;
+  int &n;
+
 public:
   iterator begin () const { return assert (n >= 0), iterator (inc (0)); }
-  iterator end ()   const { return assert (n >= 0), iterator (inc (n)); }
-  Sange (int & m) : n (m) { assert (m >= 0); }
+  iterator end () const { return assert (n >= 0), iterator (inc (n)); }
+  Sange (int &m) : n (m) { assert (m >= 0); }
 };
 
-}
+} // namespace CaDiCaL
 
 #endif

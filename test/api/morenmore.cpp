@@ -1,12 +1,14 @@
 #include "../../src/cadical.hpp"
-#include <iostream>
 #include <cassert>
+#include <iostream>
 using namespace std;
 int main () {
   CaDiCaL::Solver solver;
+  solver.set ("factor", false);
   const int n = 100;
   for (int i = 1; i < n; i++) {
-    for (int j = 1; j < i; j++) solver.add (-j);
+    for (int j = 1; j < i; j++)
+      solver.add (-j);
     solver.add (i), solver.add (0);
   }
   int res = solver.solve ();

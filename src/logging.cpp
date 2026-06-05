@@ -4,7 +4,7 @@
 
 namespace CaDiCaL {
 
-void Logger::print_log_prefix (Internal * internal) {
+void Logger::print_log_prefix (Internal *internal) {
   internal->print_prefix ();
   tout.magenta ();
   fputs ("LOG ", stdout);
@@ -13,7 +13,7 @@ void Logger::print_log_prefix (Internal * internal) {
   tout.normal ();
 }
 
-void Logger::log_empty_line (Internal * internal) {
+void Logger::log_empty_line (Internal *internal) {
   internal->print_prefix ();
   tout.magenta ();
   const int len = internal->prefix.size (), max = 78 - len;
@@ -24,7 +24,7 @@ void Logger::log_empty_line (Internal * internal) {
   fflush (stdout);
 }
 
-void Logger::log (Internal * internal, const char * fmt, ...) {
+void Logger::log (Internal *internal, const char *fmt, ...) {
   print_log_prefix (internal);
   tout.magenta ();
   va_list ap;
@@ -41,8 +41,8 @@ void Logger::log (Internal * internal, const char * fmt, ...) {
 // do so were not more readable than the current version.  See the header
 // for an explanation of the difference between the following two functions.
 
-void Logger::log (Internal * internal,
-                  const Clause * c, const char *fmt, ...) {
+void Logger::log (Internal *internal, const Clause *c, const char *fmt,
+                  ...) {
   print_log_prefix (internal);
   tout.magenta ();
   va_list ap;
@@ -50,25 +50,54 @@ void Logger::log (Internal * internal,
   vprintf (fmt, ap);
   va_end (ap);
   if (c) {
-    if (c->redundant) printf (" glue %d redundant", c->glue);
-    else printf (" irredundant");
+    if (c->redundant)
+      printf (" glue %d redundant", c->glue);
+    else
+      printf (" irredundant");
     printf (" size %d clause[%" PRId64 "]", c->size, c->id);
-    if (c->moved) printf (" ... (moved)");
+    if (c->moved)
+      printf (" ... (moved)");
     else {
       if (internal->opts.logsort) {
         vector<int> s;
-        for (const auto & lit : *c)
+        for (const auto &lit : *c)
           s.push_back (lit);
         sort (s.begin (), s.end (), clause_lit_less_than ());
-        for (const auto & lit : s)
+        for (const auto &lit : s)
           printf (" %d", lit);
       } else {
-        for (const auto & lit : *c)
-          printf (" %d", lit);
+        for (const auto &lit : *c) {
+          printf (" %s", loglit (internal, lit).c_str ());
+        }
       }
     }
-  } else if (internal->level) printf (" decision");
-  else printf (" unit");
+  } else if (internal->level)
+    printf (" decision");
+  else
+    printf (" unit");
+  fputc ('\n', stdout);
+  tout.normal ();
+  fflush (stdout);
+}
+
+void Logger::log (Internal *internal, const Gate *g, const char *fmt, ...) {
+  print_log_prefix (internal);
+  tout.magenta ();
+  va_list ap;
+  va_start (ap, fmt);
+  vprintf (fmt, ap);
+  va_end (ap);
+  if (g) {
+    printf ("%s%s gate[%" PRIu64 "] (arity: %zu) %s := %s",
+            special_gate_str (g->degenerated_gate).c_str (),
+            g->garbage ? " garbage" : "", g->id, g->arity (),
+            loglit (internal, g->lhs).c_str (),
+            string_of_gate (g->tag).c_str ());
+    for (const auto &lit : g->rhs) {
+      printf (" %s", loglit (internal, lit).c_str ());
+    }
+  } else
+    printf (" null gate");
   fputc ('\n', stdout);
   tout.normal ();
   fflush (stdout);
@@ -76,8 +105,8 @@ void Logger::log (Internal * internal,
 
 // Same as above, but for the global clause 'c' (which is not a reason).
 
-void Logger::log (Internal * internal,
-                  const vector<int> & c, const char *fmt, ...) {
+void Logger::log (Internal *internal, const vector<int> &c, const char *fmt,
+                  ...) {
   print_log_prefix (internal);
   tout.magenta ();
   va_list ap;
@@ -86,13 +115,13 @@ void Logger::log (Internal * internal,
   va_end (ap);
   if (internal->opts.logsort) {
     vector<int> s;
-    for (const auto & lit : c)
+    for (const auto &lit : c)
       s.push_back (lit);
     sort (s.begin (), s.end (), clause_lit_less_than ());
-    for (const auto & lit : s)
+    for (const auto &lit : s)
       printf (" %d", lit);
   } else {
-    for (const auto & lit : c)
+    for (const auto &lit : c)
       printf (" %d", lit);
   }
   fputc ('\n', stdout);
@@ -102,10 +131,10 @@ void Logger::log (Internal * internal,
 
 // Now for 'restore_clause' to avoid copying (without logging).
 
-void Logger::log (Internal * internal,
-                  const vector<int>::const_iterator & begin,
-                  const vector<int>::const_iterator & end,
-                  const char *fmt, ...) {
+void Logger::log (Internal *internal,
+                  const vector<int>::const_iterator &begin,
+                  const vector<int>::const_iterator &end, const char *fmt,
+                  ...) {
   print_log_prefix (internal);
   tout.magenta ();
   va_list ap;
@@ -117,7 +146,7 @@ void Logger::log (Internal * internal,
     for (auto p = begin; p != end; p++)
       s.push_back (*p);
     sort (s.begin (), s.end (), clause_lit_less_than ());
-    for (const auto & lit : s)
+    for (const auto &lit : s)
       printf (" %d", lit);
   } else {
     for (auto p = begin; p != end; p++)
@@ -128,6 +157,58 @@ void Logger::log (Internal * internal,
   fflush (stdout);
 }
 
+// for LRAT proof chains
+
+void Logger::log (Internal *internal, const vector<int64_t> &c,
+                  const char *fmt, ...) {
+  print_log_prefix (internal);
+  tout.magenta ();
+  va_list ap;
+  va_start (ap, fmt);
+  vprintf (fmt, ap);
+  va_end (ap);
+  for (const auto &id : c)
+    printf (" %" PRId64, id);
+  fputc ('\n', stdout);
+  tout.normal ();
+  fflush (stdout);
 }
+
+// for LRAT proof clauses
+
+void Logger::log (Internal *internal, const int *literals,
+                  const unsigned size, const char *fmt, ...) {
+  print_log_prefix (internal);
+  tout.magenta ();
+  va_list ap;
+  va_start (ap, fmt);
+  vprintf (fmt, ap);
+  va_end (ap);
+  for (unsigned i = 0; i < size; i++) {
+    const int lit = literals[i];
+    printf (" %d", lit);
+  }
+  fputc ('\n', stdout);
+  tout.normal ();
+  fflush (stdout);
+}
+
+string Logger::loglit (Internal *internal, int lit) {
+  std::string v = std::to_string (lit);
+  if (lit && -internal->max_var <= lit && internal->max_var >= lit) {
+    const int va = internal->val (lit);
+    if (va) {
+      v = v + "@" + std::to_string (internal->var (lit).level);
+      if (!internal->var (lit).reason)
+        v = v + "+";
+    }
+    if (va > 0)
+      v += "=1";
+    else if (va < 0)
+      v += "=-1";
+  }
+  return v;
+}
+} // namespace CaDiCaL
 
 #endif

@@ -13,6 +13,8 @@ void Internal::init_averages () {
   INIT_EMA (averages.current.glue.fast, opts.emagluefast);
   INIT_EMA (averages.current.glue.slow, opts.emaglueslow);
 
+  INIT_EMA (averages.current.decisions, opts.emadecisions);
+
   INIT_EMA (averages.current.trail.fast, opts.ematrailfast);
   INIT_EMA (averages.current.trail.slow, opts.ematrailslow);
 
@@ -22,9 +24,11 @@ void Internal::init_averages () {
 void Internal::swap_averages () {
   LOG ("saving current averages");
   swap (averages.current, averages.saved);
-  if (!averages.swapped) init_averages ();
-  else LOG ("swapping in previously saved averages");
+  if (!averages.swapped)
+    init_averages ();
+  else
+    LOG ("swapping in previously saved averages");
   averages.swapped++;
 }
 
-}
+} // namespace CaDiCaL

@@ -19,8 +19,16 @@ namespace CaDiCaL {
 /*------------------------------------------------------------------------*/
 
 bool Internal::rephasing () {
-  if (!opts.rephase) return false;
-  if (opts.forcephase) return false;
+  if (!opts.rephase)
+    return false;
+  if (opts.forcephase)
+    return false;
+  if (opts.rephase == 2) {
+    if (stable)
+      return stats.stabconflicts > lim.rephase;
+    else
+      return false;
+  }
   return stats.conflicts > lim.rephase;
 }
 
@@ -30,9 +38,9 @@ bool Internal::rephasing () {
 
 char Internal::rephase_original () {
   stats.rephased.original++;
-  signed char val = opts.phase ? 1 : -1;        // original = initial
-  PHASE ("rephase", stats.rephased.total,
-    "switching to original phase %d", val);
+  signed char val = opts.phase ? 1 : -1; // original = initial
+  PHASE ("rephase", stats.rephased.total, "switching to original phase %d",
+         val);
   for (auto idx : vars)
     phases.saved[idx] = val;
   return 'O';
@@ -42,9 +50,9 @@ char Internal::rephase_original () {
 
 char Internal::rephase_inverted () {
   stats.rephased.inverted++;
-  signed char val = opts.phase ? -1 : 1;        // original = -initial
+  signed char val = opts.phase ? -1 : 1; // original = -initial
   PHASE ("rephase", stats.rephased.total,
-    "switching to inverted original phase %d", val);
+         "switching to inverted original phase %d", val);
   for (auto idx : vars)
     phases.saved[idx] = val;
   return 'I';
@@ -55,7 +63,7 @@ char Internal::rephase_inverted () {
 char Internal::rephase_flipping () {
   stats.rephased.flipped++;
   PHASE ("rephase", stats.rephased.total,
-    "flipping all phases individually");
+         "flipping all phases individually");
   for (auto idx : vars)
     phases.saved[idx] *= -1;
   return 'F';
@@ -65,10 +73,9 @@ char Internal::rephase_flipping () {
 
 char Internal::rephase_random () {
   stats.rephased.random++;
-  PHASE ("rephase", stats.rephased.total,
-    "resetting all phases randomly");
-  Random random (opts.seed);                    // global seed
-  random += stats.rephased.random;              // different every time
+  PHASE ("rephase", stats.rephased.total, "resetting all phases randomly");
+  Random random (opts.seed);       // global seed
+  random += stats.rephased.random; // different every time
   for (auto idx : vars)
     phases.saved[idx] = random.generate_bool () ? -1 : 1;
   return '#';
@@ -80,7 +87,7 @@ char Internal::rephase_random () {
 char Internal::rephase_best () {
   stats.rephased.best++;
   PHASE ("rephase", stats.rephased.total,
-    "overwriting saved phases by best phases");
+         "overwriting saved phases by best phases");
   signed char val;
   for (auto idx : vars)
     if ((val = phases.best[idx]))
@@ -93,8 +100,11 @@ char Internal::rephase_best () {
 char Internal::rephase_walk () {
   stats.rephased.walk++;
   PHASE ("rephase", stats.rephased.total,
-    "starting local search to improve current phase");
-  walk ();
+         "starting local search to improve current phase");
+  if (opts.walkfullocc)
+    walk_full_occs ();
+  else
+    walk ();
   return 'W';
 }
 
@@ -103,9 +113,12 @@ char Internal::rephase_walk () {
 void Internal::rephase () {
 
   stats.rephased.total++;
+  last.stabilize.rephased++;
+  assert (last.stabilize.rephased <= stats.rephased.total);
   PHASE ("rephase", stats.rephased.total,
-    "reached rephase limit %" PRId64 " after %" PRId64 " conflicts",
-    lim.rephase, stats.conflicts);
+         "reached rephase limit %" PRId64 " after %" PRId64 " conflicts",
+         lim.rephase,
+         opts.rephase == 2 ? stats.stabconflicts : stats.conflicts);
 
   // Report current 'target' and 'best' and then set 'rephased' below, which
   // will trigger reporting the new 'target' and 'best' after updating it in
@@ -114,28 +127,46 @@ void Internal::rephase () {
   report ('~', 1);
 
   backtrack ();
-  clear_phases (phases.target);
-  target_assigned = 0;
 
   size_t count = lim.rephased[stable]++;
   bool single;
   char type;
 
-  if (opts.stabilize && opts.stabilizeonly) single = true;
-  else single = !opts.stabilize;
+  if (opts.stabilize && opts.stabilizeonly)
+    single = true;
+  else
+    single = !opts.stabilize;
 
   if (single && !opts.walk) {
     // (inverted,best,flipping,best,random,best,original,best)^\omega
     switch (count % 8) {
-      case 0:  type = rephase_inverted (); break;
-      case 1:  type = rephase_best ();     break;
-      case 2:  type = rephase_flipping (); break;
-      case 3:  type = rephase_best ();     break;
-      case 4:  type = rephase_random ();   break;
-      case 5:  type = rephase_best ();     break;
-      case 6:  type = rephase_original (); break;
-      case 7:  type = rephase_best ();     break;
-      default: type = 0;                   break;
+    case 0:
+      type = rephase_inverted ();
+      break;
+    case 1:
+      type = rephase_best ();
+      break;
+    case 2:
+      type = rephase_flipping ();
+      break;
+    case 3:
+      type = rephase_best ();
+      break;
+    case 4:
+      type = rephase_random ();
+      break;
+    case 5:
+      type = rephase_best ();
+      break;
+    case 6:
+      type = rephase_original ();
+      break;
+    case 7:
+      type = rephase_best ();
+      break;
+    default:
+      type = 0;
+      break;
     }
   } else if (single && opts.walk) {
     // (inverted,best,walk,
@@ -143,76 +174,212 @@ void Internal::rephase () {
     //    random,best,walk,
     //  original,best,walk)^\omega
     switch (count % 12) {
-      case 0:  type = rephase_inverted (); break;
-      case 1:  type = rephase_best ();     break;
-      case 2:  type = rephase_walk ();     break;
-      case 3:  type = rephase_flipping (); break;
-      case 4:  type = rephase_best ();     break;
-      case 5:  type = rephase_walk ();     break;
-      case 6:  type = rephase_random ();   break;
-      case 7:  type = rephase_best ();     break;
-      case 8:  type = rephase_walk ();     break;
-      case 9:  type = rephase_original (); break;
-      case 10: type = rephase_best ();     break;
-      case 11: type = rephase_walk ();     break;
-      default: type = 0;                   break;
+    case 0:
+      type = rephase_inverted ();
+      break;
+    case 1:
+      type = rephase_best ();
+      break;
+    case 2:
+      type = rephase_walk ();
+      break;
+    case 3:
+      type = rephase_flipping ();
+      break;
+    case 4:
+      type = rephase_best ();
+      break;
+    case 5:
+      type = rephase_walk ();
+      break;
+    case 6:
+      type = rephase_random ();
+      break;
+    case 7:
+      type = rephase_best ();
+      break;
+    case 8:
+      type = rephase_walk ();
+      break;
+    case 9:
+      type = rephase_original ();
+      break;
+    case 10:
+      type = rephase_best ();
+      break;
+    case 11:
+      type = rephase_walk ();
+      break;
+    default:
+      type = 0;
+      break;
+    }
+  } else if (opts.rephase == 2 && opts.walk) {
+    // (inverted,best,walk,
+    //  flipping,best,walk,
+    //    random,best,walk,
+    //  original,best,walk)^\omega
+    switch (count % 12) {
+    case 0:
+      type = rephase_inverted ();
+      break;
+    case 1:
+      type = rephase_best ();
+      break;
+    case 2:
+      type = rephase_walk ();
+      break;
+    case 3:
+      type = rephase_flipping ();
+      break;
+    case 4:
+      type = rephase_best ();
+      break;
+    case 5:
+      type = rephase_walk ();
+      break;
+    case 6:
+      type = rephase_random ();
+      break;
+    case 7:
+      type = rephase_best ();
+      break;
+    case 8:
+      type = rephase_walk ();
+      break;
+    case 9:
+      type = rephase_original ();
+      break;
+    case 10:
+      type = rephase_best ();
+      break;
+    case 11:
+      type = rephase_walk ();
+      break;
+    default:
+      type = 0;
+      break;
     }
   } else if (stable && !opts.walk) {
     // original,inverted,(best,original,best,inverted)^\omega
-    if (!count) type = rephase_original ();
-    else if (count == 1) type = rephase_inverted ();
-    else switch ((count-2) % 4) {
-      case 0:  type = rephase_best ();     break;
-      case 1:  type = rephase_original (); break;
-      case 2:  type = rephase_best ();     break;
-      case 3:  type = rephase_inverted (); break;
-      default: type = 0;                   break;
-    }
+    if (!count)
+      type = rephase_original ();
+    else if (count == 1)
+      type = rephase_inverted ();
+    else
+      switch ((count - 2) % 4) {
+      case 0:
+        type = rephase_best ();
+        break;
+      case 1:
+        type = rephase_original ();
+        break;
+      case 2:
+        type = rephase_best ();
+        break;
+      case 3:
+        type = rephase_inverted ();
+        break;
+      default:
+        type = 0;
+        break;
+      }
   } else if (stable && opts.walk) {
     // original,inverted,(best,walk,original,best,walk,inverted)^\omega
-    if (!count) type = rephase_original ();
-    else if (count == 1) type = rephase_inverted ();
-    else switch ((count-2) % 6) {
-      case 0:  type = rephase_best ();     break;
-      case 1:  type = rephase_walk ();     break;
-      case 2:  type = rephase_original (); break;
-      case 3:  type = rephase_best ();     break;
-      case 4:  type = rephase_walk ();     break;
-      case 5:  type = rephase_inverted (); break;
-      default: type = 0;                   break;
-    }
+    if (!count)
+      type = rephase_original ();
+    else if (count == 1)
+      type = rephase_inverted ();
+    else
+      switch ((count - 2) % 6) {
+      case 0:
+        type = rephase_best ();
+        break;
+      case 1:
+        type = rephase_walk ();
+        break;
+      case 2:
+        type = rephase_original ();
+        break;
+      case 3:
+        type = rephase_best ();
+        break;
+      case 4:
+        type = rephase_walk ();
+        break;
+      case 5:
+        type = rephase_inverted ();
+        break;
+      default:
+        type = 0;
+        break;
+      }
   } else if (!stable && (!opts.walk || !opts.walknonstable)) {
     // flipping,(random,best,flipping,best)^\omega
-    if (!count) type = rephase_flipping ();
-    else switch ((count-1) % 4) {
-      case 0:  type = rephase_random ();   break;
-      case 1:  type = rephase_best ();     break;
-      case 2:  type = rephase_flipping (); break;
-      case 3:  type = rephase_best ();     break;
-      default: type = 0;                   break;
-    }
+    if (!count)
+      type = rephase_flipping ();
+    else
+      switch ((count - 1) % 4) {
+      case 0:
+        type = rephase_random ();
+        break;
+      case 1:
+        type = rephase_best ();
+        break;
+      case 2:
+        type = rephase_flipping ();
+        break;
+      case 3:
+        type = rephase_best ();
+        break;
+      default:
+        type = 0;
+        break;
+      }
   } else {
     assert (!stable && opts.walk && opts.walknonstable);
     // flipping,(random,best,walk,flipping,best,walk)^\omega
-    if (!count) type = rephase_flipping ();
-    else switch ((count-1) % 6) {
-      case 0:  type = rephase_random ();   break;
-      case 1:  type = rephase_best ();     break;
-      case 2:  type = rephase_walk ();     break;
-      case 3:  type = rephase_flipping (); break;
-      case 4:  type = rephase_best ();     break;
-      case 5:  type = rephase_walk ();     break;
-      default: type = 0;                   break;
-    }
+    if (!count)
+      type = rephase_original ();
+    else
+      switch ((count - 1) % 6) {
+      case 0:
+        type = rephase_random ();
+        break;
+      case 1:
+        type = rephase_best ();
+        break;
+      case 2:
+        type = rephase_walk ();
+        break;
+      case 3:
+        type = rephase_flipping ();
+        break;
+      case 4:
+        type = rephase_best ();
+        break;
+      case 5:
+        type = rephase_walk ();
+        break;
+      default:
+        type = 0;
+        break;
+      }
   }
   assert (type);
 
+  // clear after walk such that random walk can still access the target
+  // by using the saved phases
+  copy_phases (phases.target);
+  target_assigned = 0;
+
   int64_t delta = opts.rephaseint * (stats.rephased.total + 1);
-  lim.rephase = stats.conflicts + delta;
+  lim.rephase =
+      (opts.rephase == 2 ? stats.stabconflicts : stats.conflicts) + delta;
 
   PHASE ("rephase", stats.rephased.total,
-    "new rephase limit %" PRId64 " after %" PRId64 " conflicts",
-    lim.rephase, delta);
+         "new rephase limit %" PRId64 " after %" PRId64 " conflicts",
+         lim.rephase, delta);
 
   // This will trigger to report the effect of this new set of phases at the
   // 'backtrack' (actually 'update_target_and_best') after the next
@@ -222,8 +389,14 @@ void Internal::rephase () {
   last.rephase.conflicts = stats.conflicts;
   rephased = type;
 
-  if (stable) shuffle_scores ();
-  else shuffle_queue ();
+  if (!marked_failed || unsat_constraint) {
+    assert (opts.warmup);
+    return;
+  }
+  if (stable)
+    shuffle_scores ();
+  else
+    shuffle_queue ();
 }
 
-}
+} // namespace CaDiCaL

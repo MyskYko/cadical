@@ -12,8 +12,10 @@ namespace CaDiCaL {
 // proof needed to refute a formula in proof complexity sense.
 
 bool Internal::reducing () {
-  if (!opts.reduce) return false;
-  if (!stats.current.redundant) return false;
+  if (!opts.reduce)
+    return false;
+  if (!stats.current.redundant)
+    return false;
   return stats.conflicts >= lim.reduce;
 }
 
@@ -22,23 +24,35 @@ bool Internal::reducing () {
 // Even less regularly we are flushing all redundant clauses.
 
 bool Internal::flushing () {
-  if (!opts.flush) return false;
+  if (!opts.flush)
+    return false;
   return stats.conflicts >= lim.flush;
 }
 
 /*------------------------------------------------------------------------*/
 
 void Internal::mark_clauses_to_be_flushed () {
-  for (const auto & c : clauses) {
-    if (!c->redundant) continue; // keep irredundant
-    if (c->garbage) continue;    // already marked as garbage
-    if (c->reason) continue;     // need to keep reasons
+  const int tier1limit = tier1[false];
+  const int tier2limit = max (tier1limit, tier2[false]);
+  for (const auto &c : clauses) {
+    if (!c->redundant)
+      continue; // keep irredundant
+    if (c->garbage)
+      continue; // already marked as garbage
+    if (c->reason)
+      continue; // need to keep reasons
     const unsigned used = c->used;
-    if (used) c->used--;
-    if (used) continue;          // but keep recently used clauses
-    mark_garbage (c);            // flush unused clauses
-    if (c->hyper) stats.flush.hyper++;
-    else stats.flush.learned++;
+    if (used)
+      c->used--;
+    if (c->glue <= tier1limit && used)
+      continue;
+    if (c->glue <= tier2limit && used >= max_used - 1)
+      continue;
+    mark_garbage (c); // flush unused clauses
+    if (c->hyper)
+      stats.flush.hyper++;
+    else
+      stats.flush.learned++;
   }
   // No change to 'lim.kept{size,glue}'.
 }
@@ -58,9 +72,11 @@ void Internal::mark_clauses_to_be_flushed () {
 // instead of 'rsort' below.  Sorting here is not a hot-spot anyhow.
 
 struct reduce_less_useful {
-  bool operator () (const Clause * c, const Clause * d) const {
-    if (c->glue > d->glue) return true;
-    if (c->glue < d->glue) return false;
+  bool operator() (const Clause *c, const Clause *d) const {
+    if (c->glue > d->glue)
+      return true;
+    if (c->glue < d->glue)
+      return false;
     return c->size > d->size;
   }
 };
@@ -78,43 +94,51 @@ void Internal::mark_useless_redundant_clauses_as_garbage () {
   // they otherwise have the same glue and size).
 
   vector<Clause *> stack;
+  const int tier1limit = tier1[false];
+  const int tier2limit = max (tier1limit, tier2[false]);
 
   stack.reserve (stats.current.redundant);
 
-  for (const auto & c : clauses) {
-    if (!c->redundant) continue;    // Keep irredundant.
-    if (c->garbage) continue;       // Skip already marked.
-    if (c->reason) continue;        // Need to keep reasons.
+  for (const auto &c : clauses) {
+    if (!c->redundant)
+      continue; // Keep irredundant.
+    if (c->garbage)
+      continue; // Skip already marked.
+    if (c->reason)
+      continue; // Need to keep reasons.
     const unsigned used = c->used;
-    if (used) c->used--;
-    if (c->hyper) {                 // Hyper binary and ternary resolvents
-      assert (c->size <= 3);        // are only kept for one reduce round
-      if (!used) mark_garbage (c);  // (even if 'c->keep' is true) unless
-      continue;                     //  used recently.
+    if (used)
+      c->used--;
+    if (c->glue <= tier1limit && used)
+      continue;
+    if (c->glue <= tier2limit && used >= max_used - 1)
+      continue;
+    if (c->hyper) {          // Hyper binary and ternary resolvents
+      assert (c->size <= 3); // are only kept for one reduce round
+      if (!used)
+        mark_garbage (c); // unless
+      continue;           //  used recently.
     }
-    if (used) continue;             // Do keep recently used clauses.
-    if (c->keep) continue;          // Forced to keep (see above).
-
     stack.push_back (c);
   }
 
   stable_sort (stack.begin (), stack.end (), reduce_less_useful ());
-
   size_t target = 1e-2 * opts.reducetarget * stack.size ();
 
   // This is defensive code, which I usually consider a bug, but here I am
   // just not sure that using floating points in the line above is precise
   // in all situations and instead of figuring that out, I just use this.
   //
-  if (target > stack.size ()) target = stack.size ();
+  if (target > stack.size ())
+    target = stack.size ();
 
-  PHASE ("reduce", stats.reductions, "reducing %zd clauses %.0f%%",
-    target, percent (target, stats.current.redundant));
+  PHASE ("reduce", stats.reductions, "reducing %zd clauses %.0f%%", target,
+         percent (target, stats.current.redundant));
 
   auto i = stack.begin ();
   const auto t = i + target;
   while (i != t) {
-    Clause * c = *i++;
+    Clause *c = *i++;
     LOG (c, "marking useless to be collected");
     mark_garbage (c);
     stats.reduced++;
@@ -124,16 +148,18 @@ void Internal::mark_useless_redundant_clauses_as_garbage () {
 
   const auto end = stack.end ();
   for (i = t; i != end; i++) {
-    Clause * c = *i;
+    Clause *c = *i;
     LOG (c, "keeping");
-    if (c->size > lim.keptsize) lim.keptsize = c->size;
-    if (c->glue > lim.keptglue) lim.keptglue = c->glue;
+    if (c->size > lim.keptsize)
+      lim.keptsize = c->size;
+    if (c->glue > lim.keptglue)
+      lim.keptglue = c->glue;
   }
 
   erase_vector (stack);
 
-  PHASE ("reduce", stats.reductions,
-    "maximum kept size %d glue %d", lim.keptsize, lim.keptglue);
+  PHASE ("reduce", stats.reductions, "maximum kept size %d glue %d",
+         lim.keptsize, lim.keptglue);
 }
 
 /*------------------------------------------------------------------------*/
@@ -144,24 +170,45 @@ void Internal::mark_useless_redundant_clauses_as_garbage () {
 // 'flush_watches' are messed up and assertion 'FW1' fails.
 
 bool Internal::propagate_out_of_order_units () {
-  if (!level) return true;
+  if (!level)
+    return true;
   int oou = 0;
   for (size_t i = control[1].trail; !oou && i < trail.size (); i++) {
     const int lit = trail[i];
     assert (val (lit) > 0);
-    if (var (lit).level) continue;
+    if (var (lit).level)
+      continue;
     LOG ("found out-of-order assigned unit %d", oou);
     oou = lit;
   }
-  if (!oou) return true;
-  assert (opts.chrono);
+  if (!oou)
+    return true;
+  assert (opts.chrono || external_prop || did_external_prop);
   backtrack (0);
-  if (propagate ()) return true;
+  if (propagate ())
+    return true;
   learn_empty_clause ();
   return false;
 }
 
 /*------------------------------------------------------------------------*/
+
+// reduction is scheduled with reduceint, reducetarget and reduceopt.
+// with reduceopt=1 the number of learnt clauses scale with
+// sqrt of conflicts times reduceint
+// the scaling is the same as with reduceopt=0 (the classical default)
+// however, the constants are different. To avoid this (and get roughly the
+// same behaviour with reduceopt=0 and reduceopt=1) we need to scale the
+// interval, namely (reduceint^2/2)
+// Lastly, reduceopt=2 just replaces sqrt conflicts with log conflicts.
+// The learnt clauses should not be bigger than
+// 1/reducetarget * reduceint * function (conflicts)
+// for function being log if reduceint=2 an sqrt otherwise.
+// This is however only the theoretical target and second chance for
+// tier2 clauses and very long lifespan of tier1 clauses (through used flag)
+// make this behave differently.
+// reduceinit shifts the curve to the right, increasing the number of
+// clauses in the solver. This impact will decrease over time.
 
 void Internal::reduce () {
   START (reduce);
@@ -170,35 +217,54 @@ void Internal::reduce () {
   report ('.', 1);
 
   bool flush = flushing ();
-  if (flush) stats.flush.count++;
+  if (flush)
+    stats.flush.count++;
 
-  if (!propagate_out_of_order_units ()) goto DONE;
+  if (!propagate_out_of_order_units ())
+    goto DONE;
 
   mark_satisfied_clauses_as_garbage ();
   protect_reasons ();
-  if (flush) mark_clauses_to_be_flushed ();
-  else mark_useless_redundant_clauses_as_garbage ();
+  if (flush)
+    mark_clauses_to_be_flushed ();
+  else
+    mark_useless_redundant_clauses_as_garbage ();
   garbage_collection ();
 
   {
-    int64_t delta = opts.reduceint * (stats.reductions + 1);
+    int64_t delta = opts.reduceint;
+    double factor = stats.reductions + 1;
+    if (opts.reduceopt ==
+        0) // adjust delta such this is the same as reduceopt=1
+      delta = delta * delta / 2;
+    else if (opts.reduceopt == 1) {
+      // this is the same as reduceopt=0 if reduceint = sqrt (reduceint) =
+      // 17
+      factor = sqrt ((double) stats.conflicts);
+    } else if (opts.reduceopt == 2)
+      // log scaling instead
+      factor = log ((double) stats.conflicts);
+    if (factor < 1)
+      factor = 1;
+    delta = delta * factor;
     if (irredundant () > 1e5) {
-      delta *= log (irredundant ()/1e4) / log (10);
-      if (delta < 1) delta = 1;
+      delta *= log (irredundant () / 1e4) / log (10);
     }
+    if (delta < 1)
+      delta = 1;
     lim.reduce = stats.conflicts + delta;
     PHASE ("reduce", stats.reductions,
-      "new reduce limit %" PRId64 " after %" PRId64 " conflicts",
-      lim.reduce, delta);
+           "new reduce limit %" PRId64 " after %" PRId64 " conflicts",
+           lim.reduce, delta);
   }
 
   if (flush) {
-    PHASE ("flush", stats.flush.count,
-      "new flush increment %" PRId64 "", inc.flush);
+    PHASE ("flush", stats.flush.count, "new flush increment %" PRId64 "",
+           inc.flush);
     inc.flush *= opts.flushfactor;
     lim.flush = stats.conflicts + inc.flush;
-    PHASE ("flush", stats.flush.count,
-      "new flush limit %" PRId64 "", lim.flush);
+    PHASE ("flush", stats.flush.count, "new flush limit %" PRId64 "",
+           lim.flush);
   }
 
   last.reduce.conflicts = stats.conflicts;
@@ -209,4 +275,4 @@ DONE:
   STOP (reduce);
 }
 
-}
+} // namespace CaDiCaL

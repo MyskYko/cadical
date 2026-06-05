@@ -19,9 +19,12 @@ namespace CaDiCaL {
 
 void Internal::mark_duplicated_binary_clauses_as_garbage () {
 
-  if (!opts.deduplicate) return;
-  if (unsat) return;
-  if (terminated_asynchronously ()) return;
+  if (!opts.deduplicate)
+    return;
+  if (unsat)
+    return;
+  if (terminated_asynchronously ())
+    return;
 
   START_SIMPLIFIER (deduplicate, DEDUP);
   stats.deduplications++;
@@ -29,23 +32,25 @@ void Internal::mark_duplicated_binary_clauses_as_garbage () {
   assert (!level);
   assert (watching ());
 
-  vector<int> stack;    // To save marked literals and unmark them later.
+  vector<int> stack; // To save marked literals and unmark them later.
 
   int64_t subsumed = 0;
   int64_t units = 0;
 
   for (auto idx : vars) {
 
-    if (unsat) break;
-    if (!active (idx)) continue;
+    if (unsat)
+      break;
+    if (!active (idx))
+      continue;
     int unit = 0;
 
     for (int sign = -1; !unit && sign <= 1; sign += 2) {
 
-      const int lit = sign * idx;       // Consider all literals.
+      const int lit = sign * idx; // Consider all literals.
 
       assert (stack.empty ());
-      Watches & ws = watches (lit);
+      Watches &ws = watches (lit);
 
       // We are removing references to garbage clause. Thus no 'auto'.
 
@@ -55,14 +60,18 @@ void Internal::mark_duplicated_binary_clauses_as_garbage () {
 
       for (i = j; !unit && i != end; i++) {
         Watch w = *j++ = *i;
-        if (!w.binary ()) continue;
+        if (!w.binary ())
+          continue;
         int other = w.blit;
         const int tmp = marked (other);
-        Clause * c = w.clause;
+        Clause *c = w.clause;
 
-        if (tmp > 0) {                  // Found duplicated binary clause.
+        if (tmp > 0) { // Found duplicated binary clause.
 
-          if (c->garbage) { j--; continue; }
+          if (c->garbage) {
+            j--;
+            continue;
+          }
           LOG (c, "found duplicated");
 
           // The previous identical clause 'd' might be redundant and if the
@@ -71,12 +80,15 @@ void Internal::mark_duplicated_binary_clauses_as_garbage () {
 
           if (!c->redundant) {
             watch_iterator k;
-            for (k = ws.begin ();;k++) {
+            for (k = ws.begin ();; k++) {
               assert (k != i);
-              if (!k->binary ()) continue;
-              if (k->blit != other) continue;
-              Clause * d = k->clause;
-              if (d->garbage) continue;
+              if (!k->binary ())
+                continue;
+              if (k->blit != other)
+                continue;
+              Clause *d = k->clause;
+              if (d->garbage)
+                continue;
               c = d;
               break;
             }
@@ -90,26 +102,46 @@ void Internal::mark_duplicated_binary_clauses_as_garbage () {
           mark_garbage (c);
           j--;
 
-        } else if (tmp < 0) {           // Hyper unary resolution.
+        } else if (tmp < 0) { // Hyper unary resolution.
 
-          LOG ("found %d %d and %d %d which produces unit %d",
-            lit, -other, lit, other, lit);
+          LOG ("found %d %d and %d %d which produces unit %d", lit, -other,
+               lit, other, lit);
           unit = lit;
-          j = ws.begin ();              // Flush 'ws'.
+          if (lrat) {
+            // taken from fradical
+            assert (lrat_chain.empty ());
+            lrat_chain.push_back (c->id);
+            // We've forgotten where the other binary clause is, so go find
+            // it again
+            for (watch_iterator k = ws.begin ();; k++) {
+              assert (k != i);
+              if (!k->binary ())
+                continue;
+              if (k->blit != -other)
+                continue;
+              lrat_chain.push_back (k->clause->id);
+              break;
+            }
+          }
+          j = ws.begin (); // Flush 'ws'.
           units++;
 
         } else {
-          if (c->garbage) continue;
+          if (c->garbage) {
+            j--;
+            continue;
+          }
           mark (other);
           stack.push_back (other);
         }
       }
 
-      if (j == ws.begin ()) erase_vector (ws);
+      if (j == ws.begin ())
+        erase_vector (ws);
       else if (j != end)
-        ws.resize (j - ws.begin ());    // Shrink watchers.
+        ws.resize (j - ws.begin ()); // Shrink watchers.
 
-      for (const auto & other : stack)
+      for (const auto &other : stack)
         unmark (other);
 
       stack.clear ();
@@ -124,6 +156,7 @@ void Internal::mark_duplicated_binary_clauses_as_garbage () {
       stats.failed++;
       stats.hyperunary++;
       assign_unit (unit);
+      // lrat_chain.clear ();   done in search_assign
 
       if (!propagate ()) {
         LOG ("empty clause after propagating unit");
@@ -136,4 +169,107 @@ void Internal::mark_duplicated_binary_clauses_as_garbage () {
   report ('2', !opts.reportall && !(subsumed + units));
 }
 
+/*------------------------------------------------------------------------*/
+
+// See the comment for vivifyflush.
+//
+struct deduplicate_flush_smaller {
+
+  bool operator() (Clause *a, Clause *b) const {
+
+    const auto eoa = a->end (), eob = b->end ();
+    auto i = a->begin (), j = b->begin ();
+    for (; i != eoa && j != eob; i++, j++)
+      if (*i != *j)
+        return *i < *j;
+    const bool smaller =
+        (j == eob && i != eoa) ||
+        (j == eob && i == eoa && !a->redundant && b->redundant) ||
+        (j == eob && i == eoa && (a->redundant == b->redundant) &&
+         b->id < a->id);
+    return smaller;
+  }
+};
+
+/*------------------------------------------------------------------------*/
+
+// We discovered in a bug report
+// (https://github.com/arminbiere/cadical/issues/147) that some problems
+// contains clauses several times. This was handled properly before (as a
+// side effect of vivifyflush), but the proper ticks scheduling limitation
+// makes this impossible since 2.2. Therefore, we have implemented this
+// detection as a proper inprocessing technique that is off by default and
+// run only once during preprocess quickly. As we do not want to assume
+// anything on the input clauses, we also remove the true/false literals.
+//
+// In essence, the code is simply taken from vivifyflush (without all the
+// rest of the code around obviously).
+//
+void Internal::deduplicate_all_clauses () {
+  assert (!level);
+  clear_watches ();
+
+  mark_satisfied_clauses_as_garbage ();
+  garbage_collection ();
+
+  // in order to do the inprocessing inplace, we remove the deleted clauses,
+  // put the binary deleted clauses first. Then we work on the non-deleted
+  // clauses by sorting them and sorting the clause w.r.t each other.
+  auto start = clauses.begin ();
+  auto mid = std::partition (clauses.begin (), clauses.end (),
+                             [] (Clause *c) { return !c->garbage; });
+  std::for_each (start, mid,
+                 [] (Clause *c) { return sort (c->begin (), c->end ()); });
+  assert (std::all_of (start, mid, [] (Clause *c) { return !c->garbage; }));
+  assert (std::all_of (mid, end (clauses),
+                       [] (Clause *c) { return c->garbage; }));
+
+  stable_sort (start, mid, deduplicate_flush_smaller ());
+  auto j = start, i = j;
+
+  Clause *prev = 0;
+  int64_t subsumed = 0;
+  for (; i != mid; i++) {
+    Clause *c = *j++ = *i;
+    if (!prev || c->size < prev->size) {
+      prev = c;
+      continue;
+    }
+    const auto eop = prev->end ();
+    auto k = prev->begin ();
+    for (auto l = c->begin (); k != eop; k++, l++)
+      if (*k != *l)
+        break;
+    if (k == eop) {
+      LOG (c, "found subsumed");
+      LOG (prev, "subsuming");
+      assert (!c->garbage);
+      assert (!prev->garbage);
+      assert (c->redundant || !prev->redundant);
+      mark_garbage (c);
+      delete_clause (c);
+      subsumed++;
+      j--;
+    } else
+      prev = c;
+  }
+
+  for (; i != clauses.end (); ++i) {
+    Clause *c = *i;
+    assert (c->garbage);
+    delete_clause (c);
+  }
+
+  clauses.resize (j - clauses.begin ());
+
+  ++stats.deduplicatedinitrounds;
+  PHASE ("deduplicate-all", stats.deduplicatedinitrounds,
+         "flushed %" PRId64 " subsumed clauses out of %zd", subsumed,
+         clauses.end () - start);
+  stats.subsumed += subsumed;
+  stats.deduplicatedinit += subsumed;
+  check_clause_stats ();
+  connect_watches ();
+  report ('d', !opts.reportall && !subsumed);
 }
+} // namespace CaDiCaL

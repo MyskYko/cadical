@@ -10,8 +10,8 @@
 using namespace std;
 using namespace CaDiCaL;
 
-static string path (const char * name) {
-  const char * prefix = getenv ("CADICALBUILD");
+static string path (const char *name) {
+  const char *prefix = getenv ("CADICALBUILD");
   string res = prefix ? prefix : ".";
   res += "/test-api-apitrace-";
   res += name;
@@ -19,14 +19,14 @@ static string path (const char * name) {
   return res;
 }
 
-static FILE * trace (const char * name) {
+static FILE *trace (const char *name) {
   return fopen (path (name).c_str (), "w");
 }
 
 int main () {
 
   {
-    FILE * file = trace ("file1");
+    FILE *file = trace ("file1");
     {
       Solver solver;
       solver.trace_api_calls (file);
@@ -38,19 +38,26 @@ int main () {
     setenv ("CADICAL_API_TRACE", path ("environment1").c_str (), 1);
     {
       Solver solver;
-      solver.add (1);
-      solver.add (2);
+      int var1 = solver.declare_one_more_variable ();
+      int var2 = solver.declare_one_more_variable ();
+      solver.add (var1);
+      solver.add (var2);
       solver.add (0);
       solver.solve ();
     }
     unsetenv ("CADICAL_API_TRACE");
   }
 
+  // For now, when 'factor' is disabled and we do not check for wrong API
+  // usage with respect to declared variables, the following two go through.
+
   {
-    FILE * file = trace ("file2");
+    FILE *file = trace ("file2");
     {
       Solver solver;
+      solver.set ("factor", 0);
       solver.trace_api_calls (file);
+      solver.set ("factorcheck", 0);
       solver.add (1);
       solver.add (0);
       solver.add (-1);
@@ -64,6 +71,8 @@ int main () {
     setenv ("CADICAL_API_TRACE", path ("environment2").c_str (), 1);
     {
       Solver solver;
+      solver.set ("factor", 0);
+      solver.set ("factorcheck", 0);
       solver.add (-1);
       solver.add (-2);
       solver.add (0);
@@ -71,7 +80,6 @@ int main () {
     }
     unsetenv ("CADICAL_API_TRACE");
   }
-
 
   return 0;
 }
